@@ -1,0 +1,56 @@
+#!/bin/bash
+
+# eptime - utility to search library and update .nfo files with correct runtime for tv episodes
+
+EPDIR=$HOME/.eptime
+
+# Set up some variables
+SECS="60"
+SEARCHDIR="."
+
+if [ ! -d $EPDIR ]; then
+   mkdir $EPDIR
+fi
+
+# Make sure xmlstarlet and ffmpeg are installed, otherwise exit
+if ! [ “$(command -v xmlstarlet)” ]; then
+   echo “xmlstarlet is not installed, please install it from EPEL” >&2
+   echo “exiting…”
+   exit
+elif ! [ “$(command -v ffmpeg)” ]; then
+   echo “ffmpeg is not installed” >&2
+   echo “exiting…”
+   exit
+else
+   echo “Needed packages installed.  Continuing…”
+fi
+
+find . -type f \( -name \*.[Mm][Pp]4 -o -name \*.[Mm][Kk][Vv] -o -name \*.[Aa][Vv][Ii] \) -print0 |
+#find . -name '*.[Mm][Pp]4' -print0 |
+{
+while read -rd $'\0' file; do
+   # Find the corresponding .nfo file
+   NFO=${file%.*}
+   NFO+=.nfo
+
+   # Make sure the .nfo file actually exists
+   if [ -f "$NFO" ];
+   then
+      # Check to see if we already checked this file
+      if grep -q $NFO "$EPIDIR/updated"; then
+         echo “Already updated.  Skipping...”
+      else
+         RUNSECS=$(ffprobe $file -show_format 2>&1 | sed -n 's/duration=//p' | awk -F. '{print $1}')
+         RUNMINS=$(( $RUNSECS / $SECS ))
+
+         # Use xmlstarlet to modify the runtime value in the .nfo file
+         xmlstarlet ed -L -u '//episodedetails/runtime' -v "$RUNMINS" $NFO
+         # Update our file in $EPIDIR that we have checked this file
+         echo $NFO >> $EPDIR/updated
+         # Then we can update the MySQL database with the new runtime as well
+      fi
+      else
+      echo “File $NFO does not exist.  Skipping …” >> $EPDIR/eptime.log 2>&1
+   fi
+done
+}
